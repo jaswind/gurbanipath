@@ -1,0 +1,14 @@
+# Cloudflare Pages redirects
+# https://developers.cloudflare.com/pages/configuration/redirects/
+
+# Legacy paths from earlier prototypes
+/saroop /app/ 301
+/saroop/ /app/ 301
+/saroop-full /app/ 301
+
+# Trailing-slash convenience
+/app /app/ 301
+
+# Old-style paths in case anyone bookmarked them
+/index /  301
+/home  /  301
