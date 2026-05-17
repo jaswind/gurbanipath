@@ -819,41 +819,66 @@ JS = r"""
           continue;
         }
 
-        // Word-start digraphs
-        if (!lastWasConsonant && c === 'A' && text[i + 1] === 'w') {
+        // Independent vowel digraphs. In AnmolLipi these encode the
+        // standalone vowel forms (with carrier letter built in) and can
+        // appear anywhere a syllable starts: word-initial, after a vowel
+        // matra, OR after a consonant cluster (sihari). Previously these
+        // only fired in !lastWasConsonant contexts, which missed every
+        // mid-word occurrence like 'iDAwie' -> ਧਿਆਇ, 'kwieAw' -> ਕਾਇਆ.
+        if (c === 'A' && text[i + 1] === 'w') {                      // ਆ
           out += 'ਆ'; i += 2; lastWasConsonant = false; continue;
         }
-        if (!lastWasConsonant && c === 'e' && text[i + 1] === 'I') {
-          out += 'ਈ'; i += 2; lastWasConsonant = false; continue;
-        }
-        if (!lastWasConsonant && c === 'e' && text[i + 1] === 'y') {
-          // 'ey' rare digraph -> ਏ-like; just output ਏ
-          out += 'ਏ'; i += 2; lastWasConsonant = false; continue;
-        }
-
-        // 'au' / 'AU' / 'AY' digraphs after consonant
-        if (lastWasConsonant && c === 'a' && text[i + 1] === 'u') {
-          out += 'ਉ'; i += 2; lastWasConsonant = false; continue;
-        }
-        if (lastWasConsonant && c === 'A' && text[i + 1] === 'u') {
+        if (c === 'A' && text[i + 1] === 'U') {                      // ਊ
           out += 'ਊ'; i += 2; lastWasConsonant = false; continue;
         }
-        if (lastWasConsonant && c === 'A' && text[i + 1] === 'Y') {
+        if (c === 'A' && text[i + 1] === 'Y') {                      // ਐ
           out += 'ਐ'; i += 2; lastWasConsonant = false; continue;
         }
+        if (c === 'A' && text[i + 1] === 'O') {                      // ਔ
+          out += 'ਔ'; i += 2; lastWasConsonant = false; continue;
+        }
+        if (c === 'a' && text[i + 1] === 'u') {                      // ਉ
+          out += 'ਉ'; i += 2; lastWasConsonant = false; continue;
+        }
+        if (c === 'e' && text[i + 1] === 'I') {                      // ਈ
+          out += 'ਈ'; i += 2; lastWasConsonant = false; continue;
+        }
+        if (c === 'e' && text[i + 1] === 'y') {                      // ਏ (rare digraph)
+          out += 'ਏ'; i += 2; lastWasConsonant = false; continue;
+        }
+        if (c === 'i' && text[i + 1] === 'e') {                      // ਇ
+          // Standard AnmolLipi encoding for independent ਇ. Note: this
+          // only fires after the sihari rule above has already failed
+          // (sihari needs 'i' + consonant; 'e' is not a consonant).
+          out += 'ਇ'; i += 2; lastWasConsonant = false; continue;
+        }
+        if (c === 'a' && text[i + 1] === 'U') {                      // ਊ (lowercase variant of AU)
+          out += 'ਊ'; i += 2; lastWasConsonant = false; continue;
+        }
 
-        // Independent vowels (when not after consonant)
+        // Independent vowel singles. These fire ANYWHERE — word-start, after
+        // a vowel matra, or after a consonant cluster — because AnmolLipi
+        // uses them as syllable-boundary independent vowels (e.g. 'ibAMq'
+        // -> ਬਿਅੰਤ has an independent ਅ after the sihari ਬਿ; 'qirE' ->
+        // ਤਰਿਏ has an independent ਏ after the sihari ਤਰਿ). Digraphs above
+        // are tried first so 'Aw' beats lone 'A', etc.
+        if (c === 'A') { out += 'ਅ'; i++; lastWasConsonant = false; continue; }
+        if (c === 'E') { out += 'ਏ'; i++; lastWasConsonant = false; continue; }
+        // Lowercase 'a' and 'e' only fire as independent vowels when NOT after
+        // a consonant — otherwise they'd be mistaken for matras (which they
+        // can't be, since 'a'/'e' aren't matra glyphs in AnmolLipi, but the
+        // restriction is harmless and protects against spurious ਅ insertions).
         if (!lastWasConsonant) {
           if (c === 'a') { out += 'ਅ'; i++; lastWasConsonant = false; continue; }
-          if (c === 'A') { out += 'ਅ'; i++; lastWasConsonant = false; continue; }
           if (c === 'i') { out += 'ਇ'; i++; lastWasConsonant = false; continue; }
           if (c === 'I') { out += 'ਈ'; i++; lastWasConsonant = false; continue; }
           if (c === 'u') { out += 'ਉ'; i++; lastWasConsonant = false; continue; }
           if (c === 'U') { out += 'ਊ'; i++; lastWasConsonant = false; continue; }
           if (c === 'e') { out += 'ੲ'; i++; lastWasConsonant = false; continue; }
-          if (c === 'E') { out += 'ਏ'; i++; lastWasConsonant = false; continue; }
           if (c === 'O') { out += 'ਓ'; i++; lastWasConsonant = false; continue; }
         }
+        // Rare: lone 'e' after consonant (e.g. 'geˆØI'). Treat as carrier ੲ.
+        if (c === 'e') { out += 'ੲ'; i++; lastWasConsonant = false; continue; }
 
         // Matras after consonant (or after another matra)
         if (matras[c] !== undefined) {

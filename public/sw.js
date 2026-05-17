@@ -12,7 +12,7 @@
  * bump CACHE_VERSION below.
  */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `gurbanipath-${CACHE_VERSION}`;
 
 // Pages and assets to pre-cache on install
