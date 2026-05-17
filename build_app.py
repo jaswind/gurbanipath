@@ -745,9 +745,22 @@ JS = r"""
       'q':'ਤ','Q':'ਥ','d':'ਦ','D':'ਧ','n':'ਨ',
       'p':'ਪ','P':'ਫ','b':'ਬ','B':'ਭ','m':'ਮ',
       'X':'ਯ','r':'ਰ','l':'ਲ','v':'ਵ','V':'ੜ',
-      'S':'ਸ਼','L':'ਲ਼','z':'ਜ਼','Z':'ਗ਼','@':'ਫ਼','^':'ਖ਼',
+      'S':'ਸ਼','L':'ਲ਼','z':'ਜ਼','Z':'ਗ਼','^':'ਖ਼',
     };
     const consonants = new Set(Object.keys(cmap));
+    // Subjoined half-form glyphs (AnmolLipi). Most map to virama+consonant;
+    // ü and ¨ are low-positioned vowel marks that follow subjoined letters.
+    const subjoiners = {
+      'H': '੍ਹ', '@': '੍ਹ',          // subjoined HAHA (two visual forms)
+      'R': '੍ਰ', '®': '੍ਰ',          // subjoined RARA (two visual forms)
+      '´': '੍ਯ',                     // subjoined YAYYA
+      'Í': '੍ਵ',                     // subjoined VAVA
+      'ç': '੍ਚ',                     // subjoined CHACHA
+      '˜': '੍ਨ',                     // subjoined NANNA
+      '†': '੍ਟ',                     // subjoined TAINKA (Sanskrit loans)
+      'œ': '੍ਤ',                     // subjoined TATTA
+      'ü': 'ੁ', '¨': 'ੂ',            // low-position aunkar / dulainkar
+    };
     const matras = {
       'w':'ਾ','y':'ੇ','Y':'ੈ','o':'ੋ','O':'ੌ',
     };
@@ -779,17 +792,30 @@ JS = r"""
           out += ' '; i++; lastWasConsonant = false; continue;
         }
 
-        // Pre-vowel sihari: 'i' before consonant -> consonant + ਿ
+        // Trigraph ˆØI -> ੀਂ  (visual "bindi above bihari"; reorder to logical Unicode)
+        if (c === 'ˆ' && text[i + 1] === 'Ø' && text[i + 2] === 'I') {
+          out += 'ੀਂ'; i += 3; lastWasConsonant = false; continue;
+        }
+
+        // W -> ਾਂ  (kanna + bindi, e.g. ਜਾਂ, ਮਾਂ, ਭਾਂਡਾ)
+        if (c === 'W') {
+          out += 'ਾਂ'; i++; lastWasConsonant = false; continue;
+        }
+
+        // Pre-vowel sihari: 'i' + consonant. Consume any subjoined consonants
+        // that follow so the sihari sits AFTER the full half-form cluster
+        // (correct Unicode order: ਕ੍ਰਿ not ਕਿ੍ਰ).
         if (c === 'i' && i + 1 < text.length && consonants.has(text[i + 1])) {
-          // Check for paireen sequences like "ipR" (sihari + paireen-r + consonant)
-          // Standard: 'i' + consonant -> consonant + sihari, but if a subjoiner
-          // follows the consonant, we need to attach sihari to the FULL cluster.
-          // Simplification: just consonant + sihari; let subjoiners follow.
-          let nxt = text[i + 1];
-          out += cmap[nxt] + 'ਿ';
-          i += 2;
+          let cluster = cmap[text[i + 1]];
+          let j = i + 2;
+          while (j < text.length && subjoiners[text[j]] !== undefined
+                 && subjoiners[text[j]].charCodeAt(0) === 0x0A4D) {
+            cluster += subjoiners[text[j]];
+            j++;
+          }
+          out += cluster + 'ਿ';
+          i = j;
           lastWasConsonant = true;
-          // Apply any following subjoiner (R, H) to the same cluster
           continue;
         }
 
@@ -839,20 +865,19 @@ JS = r"""
         if (c === 'I') { out += 'ੀ'; i++; lastWasConsonant = false; continue; }
         if (c === 'O') { out += 'ੌ'; i++; lastWasConsonant = false; continue; }
 
-        // Bindi / tippi (combine with previous letter)
+        // Subjoined half-forms and low-position vowel marks
+        if (subjoiners[c] !== undefined) {
+          out += subjoiners[c]; i++; lastWasConsonant = true; continue;
+        }
+
+        // Bindi / tippi / visarga (combine with previous letter)
         if (c === 'M') { out += 'ੰ'; i++; continue; }
         if (c === 'N') { out += 'ਂ'; i++; continue; }
+        if (c === 'ˆ') { out += 'ਂ'; i++; continue; }   // bindi (alternate)
         if (c === '`') { out += 'ਃ'; i++; continue; }
         if (c === 'Ú') { out += 'ਃ'; i++; continue; }
         if (c === 'µ') { out += 'ਂ'; i++; continue; }
-
-        // Subjoined consonants
-        if (c === 'H') { out += '੍ਹ'; i++; lastWasConsonant = true; continue; }
-        if (c === 'R') { out += '੍ਰ'; i++; lastWasConsonant = true; continue; }
-        if (c === '´') { out += '੍ਯ'; i++; lastWasConsonant = true; continue; }
-        if (c === '@') { out += 'ਫ਼'; i++; lastWasConsonant = true; continue; }
-        if (c === 'ƒ') { out += '੍ਨ'; i++; lastWasConsonant = true; continue; }
-        if (c === 'œ') { out += '੍ਟ'; i++; lastWasConsonant = true; continue; }
+        if (c === 'Ø') { i++; continue; }              // font-positioning glyph; drop
 
         // Consonants
         if (cmap[c] !== undefined) {
