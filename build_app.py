@@ -551,6 +551,43 @@ body.hide-citation .verse-of-day .citation { display: none; }
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+/* Update-available banner — shown when a new SW version takes over.
+   Subtle, dismissible; the user controls when the refresh happens. */
+.update-banner {
+  position: fixed;
+  top: calc(var(--safe-top) + 8px);
+  left: 50%; transform: translateX(-50%) translateY(-12px);
+  display: flex; align-items: center; gap: 12px;
+  background: var(--surface-up);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 8px 8px 8px 16px;
+  box-shadow: 0 8px 24px rgba(28, 24, 20, 0.12);
+  font-family: var(--font-ui); font-size: 13px;
+  color: var(--ink-2);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s, transform 0.25s;
+  z-index: 600;
+  max-width: calc(100vw - 32px);
+}
+.update-banner.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+.update-banner-refresh {
+  background: var(--accent); color: var(--paper);
+  border: none; border-radius: 999px;
+  padding: 6px 14px;
+  font: inherit; font-weight: 500;
+  cursor: pointer;
+}
+.update-banner-refresh:active { background: var(--accent-soft); }
+.update-banner-dismiss {
+  background: transparent; border: none;
+  color: var(--ink-4); cursor: pointer;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; font-size: 18px; line-height: 1;
+}
+.update-banner-dismiss:active { background: var(--rule-soft); }
+
 /* Ang-jump dialog */
 .ang-jump-popover {
   position: absolute; top: calc(var(--header-h) + 6px);
@@ -1747,23 +1784,67 @@ JS = r"""
   }, 100);
 
   // ============ SERVICE WORKER ============
+  // Force-reload: nuke all caches and unregister SW. Used by both the
+  // "Reload to latest" settings button and (after confirmation) by the
+  // update banner. Reload always happens; if cache wipe fails, we still
+  // reload — the browser will refetch from the server.
+  async function forceReload() {
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    } catch (err) {
+      console.warn('Cache wipe failed (will reload anyway):', err);
+    }
+    location.reload();
+  }
+  window.__forceReload = forceReload;
+
+  function showUpdateBanner() {
+    const banner = document.getElementById('updateBanner');
+    if (!banner) return;
+    banner.classList.add('show');
+  }
+  function hideUpdateBanner() {
+    const banner = document.getElementById('updateBanner');
+    if (!banner) return;
+    banner.classList.remove('show');
+  }
+
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js', { scope: '/' })
-        .then(reg => {
-          // Listen for an updated SW; reload silently when it takes over
-          reg.addEventListener('updatefound', () => {
-            const newSW = reg.installing;
-            if (!newSW) return;
-            newSW.addEventListener('statechange', () => {
-              if (newSW.state === 'activated' && navigator.serviceWorker.controller) {
-                // A new version is ready; do not interrupt the user.
-                // Their next visit will use the fresh assets automatically.
-              }
-            });
-          });
-        })
-        .catch(err => console.warn('SW registration failed:', err));
+        .catch((err) => console.warn('SW registration failed:', err));
+
+      // Listen for messages from the SW. The activate handler posts
+      // { type: 'SW_UPDATED' } when a new version takes over an existing
+      // installation (not on first install). Show the banner so the
+      // user can refresh on their own schedule.
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'SW_UPDATED') {
+          showUpdateBanner();
+        }
+      });
+    });
+
+    // Wire up banner buttons (must be wired regardless of whether the
+    // banner is currently visible — the user may dismiss and re-show).
+    document.addEventListener('DOMContentLoaded', () => {
+      const refreshBtn = document.getElementById('updateBannerRefresh');
+      const dismissBtn = document.getElementById('updateBannerDismiss');
+      if (refreshBtn) refreshBtn.addEventListener('click', forceReload);
+      if (dismissBtn) dismissBtn.addEventListener('click', hideUpdateBanner);
+
+      // Wire up the "Reload to latest" settings entry
+      const reloadBtn = document.getElementById('asDispReload');
+      if (reloadBtn) {
+        reloadBtn.addEventListener('click', () => {
+          if (confirm('Reload the app to fetch the latest version? Your bookmarks and reading place are preserved.')) {
+            forceReload();
+          }
+        });
+      }
     });
   }
 })();
@@ -1773,6 +1854,14 @@ BODY = r"""
 <div class="loader" id="loader">
   <div class="ornament">❋</div>
   <div class="text">Preparing your reading space…</div>
+</div>
+
+<!-- Update-available banner: shown by SW message listener when a new SW
+     activates over an existing install. Manually dismissible. -->
+<div class="update-banner" id="updateBanner" role="status" aria-live="polite">
+  <span>A new version is available</span>
+  <button class="update-banner-refresh" id="updateBannerRefresh">Refresh</button>
+  <button class="update-banner-dismiss" id="updateBannerDismiss" aria-label="Dismiss">×</button>
 </div>
 
 <div id="app">
@@ -1964,6 +2053,13 @@ BODY = r"""
         </svg>
         Line number &amp; source
         <span class="check"></span>
+      </button>
+      <div class="action-sheet-divider"></div>
+      <button class="action-sheet-item" id="asDispReload">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.3L3 16M3 21v-5h5"/>
+        </svg>
+        Reload to latest version
       </button>
       <div class="action-sheet-divider"></div>
     </div>

@@ -12,7 +12,7 @@
  * bump CACHE_VERSION below.
  */
 
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const CACHE_NAME = `gurbanipath-${CACHE_VERSION}`;
 
 // Pages and assets to pre-cache on install
@@ -53,15 +53,31 @@ self.addEventListener('install', (event) => {
 // ---- ACTIVATE ----
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((k) => k.startsWith('gurbanipath-') && k !== CACHE_NAME)
-          .map((k) => caches.delete(k))
-      )
-    )
+    (async () => {
+      // Find any stale caches from previous versions
+      const keys = await caches.keys();
+      const staleCaches = keys.filter(
+        (k) => k.startsWith('gurbanipath-') && k !== CACHE_NAME
+      );
+      // If staleCaches is non-empty, this is an UPGRADE (not a first install)
+      const isUpgrade = staleCaches.length > 0;
+
+      // Delete the stale caches
+      await Promise.all(staleCaches.map((k) => caches.delete(k)));
+
+      // Take control of all open pages immediately
+      await self.clients.claim();
+
+      // If this was an upgrade, tell the open page(s) so they can show
+      // an "update available" banner without an unexpected reload.
+      if (isUpgrade) {
+        const allClients = await self.clients.matchAll({ type: 'window' });
+        for (const client of allClients) {
+          client.postMessage({ type: 'SW_UPDATED', version: CACHE_VERSION });
+        }
+      }
+    })()
   );
-  self.clients.claim();
 });
 
 // ---- FETCH ----
